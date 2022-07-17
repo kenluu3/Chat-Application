@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     char ipAddress[INET_ADDRSTRLEN];
     inet_ntop(p->ai_family, p->ai_addr, ipAddress, p->ai_addrlen);
 
-    std::cout << "Successfully created socket and binded to local address: " << ipAddress << " on port " << PORT << '\n'; 
+    std::cout << "Created Socket and Binded to IP Address: " << ipAddress << " on Port: " << PORT << '\n'; 
     break;
   }
 
@@ -76,14 +76,15 @@ int main(int argc, char* argv[]) {
     return -4;
   }
 
+  close(listener);
+
   char clientAddress[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(client.sin_addr), clientAddress, INET_ADDRSTRLEN);
   std::cout << "Client connected: " << clientAddress << '\n';
 
-  send(comm, "Hello", 5, 0);
+  send(comm, "Hello There!", 13, 0);
 
   close(comm);
-  close(listener);
 
   return 0;
 }
