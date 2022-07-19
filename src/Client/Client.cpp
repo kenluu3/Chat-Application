@@ -47,7 +47,6 @@ int main(int argc, char* argv[]) {
     char ipAddress[INET_ADDRSTRLEN];
     inet_ntop(p->ai_family, p->ai_addr, ipAddress, p->ai_addrlen);
 
-    std::cout << "Created Socket to and successfully connected to IP Address: " << ipAddress << " on Port: " << PORT << '\n';
     break;
   }
 
@@ -59,14 +58,35 @@ int main(int argc, char* argv[]) {
   }
 
   char buffer[MAX_DATA_SIZE];
-  long numBytes{ recv(comm, buffer, MAX_DATA_SIZE - 1, 0) };
+  long numBytes{ recv(comm, buffer, MAX_DATA_SIZE, 0) };
 
   if (numBytes == -1) {
     perror("recv");
     return -3;
   }
 
-  std::cout << "Server sent: " << buffer << '\n';
+  std::cout << buffer << '\n';
+
+  while (numBytes > 0) {
+    std::string msg{};
+    std::cin >> msg;
+
+    if (msg == "q") {
+      break;
+    } else {
+      send(comm, msg.c_str(), msg.size(), 0);
+    }
+
+    memset(buffer, 0, MAX_DATA_SIZE);
+    numBytes = recv(comm, buffer, MAX_DATA_SIZE, 0);
+
+    if (numBytes == 0) {
+      std::cout << "Connection Closed\n";
+    } else {
+      std::cout << "Server: " << buffer << '\n';
+    }
+
+  }
 
   close(comm);
 

@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #define PORT "3490"
+#define MAX_DATA_SIZE 100
 #define MAX_CONNECTIONS 15
 
 int main(int argc, char* argv[]) {
@@ -80,9 +81,34 @@ int main(int argc, char* argv[]) {
 
   char clientAddress[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(client.sin_addr), clientAddress, INET_ADDRSTRLEN);
-  std::cout << "Client connected: " << clientAddress << '\n';
+  std::cout << "Client " << clientAddress <<  " has successfully connected to the server.\n";
 
-  send(comm, "Hello There!", 13, 0);
+  send(comm, "You have successfully connected to the server.", 47, 0);
+
+  char buffer[MAX_DATA_SIZE];
+  long numBytes{};
+
+  while (comm > 0) {
+    memset(buffer , 0, MAX_DATA_SIZE);
+    numBytes = recv(comm, buffer, MAX_DATA_SIZE, 0);
+
+    if (numBytes == 0) {
+      std::cout << "Client Terminated Connection\n";
+      break;
+    } else {
+      std::cout << "Client: " << buffer << '\n';
+    }
+
+    std::string msg{};
+    std::cin >> msg;
+
+    if (msg == "q") {
+      send(comm, "Server Terminating Connection", 20, 0);
+      break;
+    } else {
+      send(comm, msg.c_str(), msg.size(), 0);
+    }
+  } 
 
   close(comm);
 
