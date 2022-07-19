@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::string send_msg{};
-    std::cin >> send_msg;
+    std::getline(std::cin, send_msg);
 
     if (send_msg == "Q") {
       break;

@@ -59,12 +59,12 @@ int main(int argc, char* argv[]) {
 
   while (read_bytes) {
     std::string send_msg{};
-    std::cin >> send_msg;
+    std::getline(std::cin, send_msg);
 
     if (send_msg == "Q") {
       break;
     } else {
-      send(comm_socket, send_msg.c_str(), send_msg.size(), 0);
+      long bytesSent{ send(comm_socket, send_msg.c_str(), send_msg.size(), 0) };
     }
 
     std::memset(read_buffer, 0, MAX_DATA);
