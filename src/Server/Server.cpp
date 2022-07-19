@@ -1,4 +1,5 @@
 #include <iostream>
+#include <memory>
 #include <string>
 #include <cstdio>
 #include <cerrno>
@@ -9,108 +10,104 @@
 #include <netdb.h>
 #include <unistd.h>
 
-#define PORT "3490"
-#define MAX_DATA_SIZE 100
-#define MAX_CONNECTIONS 15
-
 int main(int argc, char* argv[]) {
-  addrinfo hints{}, *server{ nullptr };
+  const std::string PORT{ "3500" };
+  constexpr int MAX_DATA{ 100 };
+  constexpr int MAX_CONNECTIONS{ 15 };
+
+  char ip[INET_ADDRSTRLEN]{};
+  addrinfo hints{}, *server{ nullptr }, *itr{ nullptr };
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
 
-  int result{ getaddrinfo(NULL, PORT, &hints, &server) };
-
-  if (result != 0) {
-    std::cerr << "Error retrieving server information: " << gai_strerror(result) << '\n';
+  int gai{ getaddrinfo(NULL, PORT.c_str(), &hints, &server) };
+  if (gai != 0) {
+    std::cerr << "getaddrinfo: " << gai_strerror(gai) << '\n';
     return -1;
   }
 
-  int listener{}; 
-  addrinfo *p{ nullptr };
+  int listen_socket{};
+  for (itr = server; itr != nullptr; itr = itr->ai_next) {
+    listen_socket = socket(itr->ai_family, itr->ai_socktype, itr->ai_protocol);
 
-  for (p = server; p != nullptr; p = p->ai_next) {
-    if ((listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+    if (listen_socket == -1) {
       perror("socket");
       continue;
     }
 
-    int y{1};
-    if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &y, sizeof(y)) == -1) {
+    int yes{1};
+    if (setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
       perror("setsockopt");
       continue;
     }
 
-    if (bind(listener, p->ai_addr, p->ai_addrlen) == -1) {
-      close(listener);
+    if (bind(listen_socket, itr->ai_addr, itr->ai_addrlen) == -1) {
+      close(listen_socket);
       perror("bind");
       continue;
     }
 
-    char ipAddress[INET_ADDRSTRLEN];
-    inet_ntop(p->ai_family, p->ai_addr, ipAddress, p->ai_addrlen);
-
-    std::cout << "Created Socket and Binded to IP Address: " << ipAddress << " on Port: " << PORT << '\n'; 
+    inet_ntop(itr->ai_family, itr->ai_addr, ip, itr->ai_addrlen);
+    std::cout << "Successfully created server socket binded to IP Address: " << ip << " on Port: " << PORT << '\n';
     break;
-  }
-
-  if (p == nullptr) {
-    std::cout << "Failed to create and bind socket.\n";
-    return -2;
   }
 
   freeaddrinfo(server);
 
-  if (listen(listener, MAX_CONNECTIONS) == -1) {
+  if (itr == nullptr) {
+    std::cerr << "Failed to create server socket\n";
+    return -2;
+  }
+  
+  if (listen(listen_socket, MAX_CONNECTIONS) == -1) {
     perror("listen");
     return -3;
   }
 
-  std::cout << "Listening for connections...\n";
+  std::cout << "Waiting for client connections...\n\n";
 
   sockaddr_in client{};
-  socklen_t clientsize{ sizeof(client) };
-  int comm{ accept(listener, reinterpret_cast<sockaddr *>(&client), &clientsize) };
+  socklen_t client_size{ sizeof(client) };
+  char client_ip[INET_ADDRSTRLEN];
 
-  if (comm == -1) {
+  int comm_socket{ accept(listen_socket, reinterpret_cast<sockaddr *>(&client), &client_size) };
+  
+  close(listen_socket);
+
+  if (comm_socket == -1) {
     perror("accept");
     return -4;
   }
 
-  close(listener);
+  inet_ntop(AF_INET, &(client.sin_addr), client_ip, INET_ADDRSTRLEN);
+  std::cout << "----------- CLIENT [" << client_ip << "] has connected. -----------\n";
 
-  char clientAddress[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(client.sin_addr), clientAddress, INET_ADDRSTRLEN);
-  std::cout << "Client " << clientAddress <<  " has successfully connected to the server.\n";
+  char read_buffer[MAX_DATA]{};
+  long read_bytes{1};
 
-  send(comm, "You have successfully connected to the server.", 47, 0);
+  while (read_bytes) {
+    std::memset(read_buffer, 0, MAX_DATA);
+    read_bytes = recv(comm_socket, read_buffer, MAX_DATA, 0);
 
-  char buffer[MAX_DATA_SIZE];
-  long numBytes{};
-
-  while (comm > 0) {
-    memset(buffer , 0, MAX_DATA_SIZE);
-    numBytes = recv(comm, buffer, MAX_DATA_SIZE, 0);
-
-    if (numBytes == 0) {
-      std::cout << "Client Terminated Connection\n";
+    if (read_bytes == 0) {
+      std::cout << "CLIENT [" << client_ip << "] has terminated connection.\n";
       break;
     } else {
-      std::cout << "Client: " << buffer << '\n';
+      std::cout << "CLIENT: " << read_buffer << std::endl;
     }
 
-    std::string msg{};
-    std::cin >> msg;
+    std::string send_msg{};
+    std::cin >> send_msg;
 
-    if (msg == "q") {
-      send(comm, "Server Terminating Connection", 20, 0);
+    if (send_msg == "Q") {
       break;
     } else {
-      send(comm, msg.c_str(), msg.size(), 0);
+      send(comm_socket, send_msg.c_str(), send_msg.size(), 0);
     }
-  } 
+  }
 
-  close(comm);
+  close(comm_socket);
 
   return 0;
 }
