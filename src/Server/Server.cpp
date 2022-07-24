@@ -3,12 +3,15 @@
 #include <string>
 #include <cstdio>
 #include <cerrno>
+#include <vector>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
 
 int main(int argc, char* argv[]) {
   const std::string PORT{ "3500" };
@@ -59,6 +62,8 @@ int main(int argc, char* argv[]) {
     std::cerr << "Failed to create server socket\n";
     return -2;
   }
+
+  fcntl(listen_socket, F_SETFL, O_NONBLOCK);
   
   if (listen(listen_socket, MAX_CONNECTIONS) == -1) {
     perror("listen");
@@ -67,47 +72,75 @@ int main(int argc, char* argv[]) {
 
   std::cout << "Waiting for client connections...\n\n";
 
-  sockaddr_in client{};
-  socklen_t client_size{ sizeof(client) };
-  char client_ip[INET_ADDRSTRLEN];
+  int communication_fd{};
+  int fd_count{ 1 };
+  sockaddr_in remote_addr{};
+  socklen_t remote_addrlen{ sizeof(remote_addr) };
+  char remoteIP[INET_ADDRSTRLEN]{};
+  char buffer[256];
 
-  int comm_socket{ accept(listen_socket, reinterpret_cast<sockaddr *>(&client), &client_size) };
+  std::vector<pollfd> pfds(5);
+
+  pfds[0].fd = listen_socket;
+  pfds[0].events = POLLIN;
+
+  while (true) {
+    int poll_count{ poll(&pfds[0], fd_count, -1) };
   
+    if (poll_count == -1) {
+      perror("poll");
+      return -4;
+    }
+
+    for (int i{0}; i < fd_count; ++i) {
+      if (pfds[i].revents & POLLIN) {
+        if (pfds[i].fd == listen_socket) {
+          communication_fd = accept(listen_socket, reinterpret_cast<sockaddr *>(&remote_addr), &remote_addrlen);
+
+          if (communication_fd == -1) {
+            perror("accept");
+          } else {
+            if (fd_count < 5) {
+              pfds[fd_count].fd = communication_fd;
+              pfds[fd_count].revents = POLLIN;
+
+              fd_count += 1;
+
+              inet_ntop(AF_INET, &(remote_addr.sin_addr), remoteIP, INET_ADDRSTRLEN);
+              std::cout << "----------- REMOTE [" << remoteIP << "] has connected. -----------\n";
+            }
+          }
+        }
+      } else {
+        long num_bytes{ recv(pfds[i].fd, buffer, sizeof buffer, 0) };
+        int senderFD{ pfds[i].fd }; 
+
+        if (num_bytes <= 0) {
+          if (num_bytes == 0) {
+            std::cout << "Socket " << senderFD << " has terminated connection\n";
+          } else {
+            perror("recv");
+          }
+
+          close(pfds[i].fd); 
+          fd_count -= 1;
+        } else {
+          for (int j = 0; j < fd_count; ++j) {
+            int dest_fd = pfds[j].fd;
+
+            if (dest_fd != listen_socket && dest_fd != communication_fd) {
+              if (send(dest_fd, buffer, num_bytes, 0) == -1) {
+                perror("send");
+              }
+            }
+          }
+        }
+      }
+    }
+
+  }
+
   close(listen_socket);
-
-  if (comm_socket == -1) {
-    perror("accept");
-    return -4;
-  }
-
-  inet_ntop(AF_INET, &(client.sin_addr), client_ip, INET_ADDRSTRLEN);
-  std::cout << "----------- CLIENT [" << client_ip << "] has connected. -----------\n";
-
-  char read_buffer[MAX_DATA]{};
-  long read_bytes{1};
-
-  while (read_bytes) {
-    std::memset(read_buffer, 0, MAX_DATA);
-    read_bytes = recv(comm_socket, read_buffer, MAX_DATA, 0);
-
-    if (read_bytes == 0) {
-      std::cout << "CLIENT [" << client_ip << "] has terminated connection.\n";
-      break;
-    } else {
-      std::cout << "CLIENT: " << read_buffer << std::endl;
-    }
-
-    std::string send_msg{};
-    std::getline(std::cin, send_msg);
-
-    if (send_msg == "Q") {
-      break;
-    } else {
-      send(comm_socket, send_msg.c_str(), send_msg.size(), 0);
-    }
-  }
-
-  close(comm_socket);
 
   return 0;
 }
